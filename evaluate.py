@@ -3,6 +3,11 @@
 from typing import Union, Callable, List
 
 class ExpTreeNode:
+    """ An abstract class, representing the tree node
+    of an expression tree. 
+
+    """
+
     def evaluate(self) -> Union[int, float]: 
         """ Evaluate the expression tree starting
         from this node. Returns a numerical value
@@ -34,7 +39,9 @@ class ExpTreeNode:
 
         Returns
         -------
-        A list of elements
+        A list of elements, each of which is either
+        * a string for an operator or an operand, or
+        * a list as a sub-expression
         """
         ch_list = []
         skip = 0
@@ -47,11 +54,15 @@ class ExpTreeNode:
             '\\right]' : ']', 
             '\\frac' : 'F'
         }
+        """The escape combination"""
         LEFT_RIGHT_MATCHING = {
             '{' : '}',
             '[' : ']',
             '(' : ')'
         }
+        """The parentheses"""
+
+        # STEP ONE: shrink the escape combinations
         for idx, ch in enumerate(exp):
             if skip > 0:
                 skip -= 1
@@ -68,6 +79,8 @@ class ExpTreeNode:
                 ch_list.append(ch)
 
         # print(exp, '->', ','.join(ch_list))
+
+        # STEP TWO: recusively form the groups
 
         group_list = []
         skip = 0
@@ -115,6 +128,13 @@ class ExpTreeNode:
 
 
 class NumericalNode(ExpTreeNode):
+    """ The expression tree node for a numerical value,
+    either a float number or an integer
+
+    Params
+    ------
+    val: the numerical value the node is representing
+    """
     def __init__(self, val: Union[int, float]):
         self._val = val
 
@@ -133,8 +153,22 @@ class NumericalNode(ExpTreeNode):
         return NumericalNode(val)
 
 class OperatorNode(ExpTreeNode):
+    """ An expression tree node for a operator
+
+    Params
+    -----
+    opt: a callable, whose input shall be the operator's
+            operands, returning the results. The nested class
+            `PreDefinedOperations` offers predefined algebra
+            operations. It is suggested to use the predefined
+            operations ONLY, as the priorities are clearly
+            specified for those predefined operations. 
+    """
 
     class PreDefinedOperations:
+        """ The predefined operations, for the convenience of
+        initialization the OperatorNode
+        """
         @classmethod
         def divide(cls, children: List[ExpTreeNode]):
             assert len(children) == 2, f"There must be 2 operands for division, got {len(children)}"
@@ -161,7 +195,18 @@ class OperatorNode(ExpTreeNode):
             return children[0].evaluate() ** children[1].evaluate()
 
         @classmethod
-        def get_operation_func(cls, operator: str):
+        def get_operation_func(cls, operator: str) -> Callable[[List[ExpTreeNode]], Union[int, float]]:
+            """ Find the predefined func corresponding to the given operator string
+
+            Params
+            ------
+            operator: the operator string
+
+            Returns
+            -------
+            A callable, instructing how the operator should evaluate its operands
+            -----
+            """
             if operator == '+': return cls.add
             if operator == '-': return cls.substract
             if operator == '*': return cls.multiply
@@ -171,7 +216,11 @@ class OperatorNode(ExpTreeNode):
             raise ValueError(f"unsupported operator: {operator}")
 
         @classmethod
-        def op_func_priority(cls, operator: Callable):
+        def op_func_priority(cls, operator: Callable) -> int:
+            """Defining the priority of the predefined operator functions
+            
+            The higher the returned value is, the higher priority it has
+            """
             if operator == cls.power: return 5
             if operator == cls.divide or operator == cls.multiply: return 3
             if operator == cls.add or operator == cls.substract: return 1
@@ -193,7 +242,14 @@ class OperatorNode(ExpTreeNode):
         
     
     @classmethod
-    def _parse(cls, exp: List[Union[str, List]]) -> "OperatorNode": 
+    def _parse(cls, exp: List[Union[str, List]]) -> ExpTreeNode:
+        """ The inner implementation for the cls.parse. 
+
+        This implementation, instead of taking a string, requires pre-
+        processed list of elements (the returned value from
+        `ExpTreeNode._split_exp_into_nodes`), and returns the root
+        node
+        """
         skip = 0
         stack = []
         hold_operand = None
@@ -216,6 +272,7 @@ class OperatorNode(ExpTreeNode):
             elif elem.isdigit():
                 node = NumericalNode.parse(elem)
             else:
+                # NONE <=> Operator!
                 node = None
 
             if node != None:
