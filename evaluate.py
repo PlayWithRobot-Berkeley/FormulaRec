@@ -247,5 +247,13 @@ class OperatorNode(ExpTreeNode):
 
 
 
+def evaluate_exp(exp: str) -> Union[int, float, None]:
+    """ Evaluate the expression
+
+    Return the numerical result, or None if the expression
+    is invalid or not supported
+
+    """
+    return OperatorNode.parse(exp).evaluate()
 
 

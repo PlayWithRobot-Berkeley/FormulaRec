@@ -21,6 +21,7 @@ from argparse import SUPPRESS, ArgumentParser
 
 import cv2 as cv
 from utils import (PREPROCESSING, Model, calculate_probability, preprocess_image)
+from evaluate import evaluate_exp
 
 log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.WARN, stream=sys.stdout)
 
@@ -63,7 +64,12 @@ def non_interactive_demo(model, args):
         log.info("Confidence score is {}".format(prob))
         if prob >= args.conf_thresh ** len(distribution):
             phrase = model.vocab.construct_phrase(targets)
-            print(f"Formula: {phrase}\n")
+            try:
+                print(f"Formula: {phrase} = {evaluate_exp(phrase)}\n")
+            except ValueError:
+                print(f"Formula: {phrase} -> incorrect, skipped")
+            except Exception as e:
+                print(f"Formula: {phrase} -> {type(e)}: e")
         if k == 27 or k == 113:  #27, 113 are ascii for escape and q respectively
             break
     vCap.release()
