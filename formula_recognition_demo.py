@@ -57,11 +57,11 @@ def formula_recognizer(model: Model, target_shape: Tuple[int, int], args: Dict[s
     if prob >= args['conf_thresh'] ** len(distribution):
         phrase = model.vocab.construct_phrase(targets)
         try:
-            print(f"Formula: {phrase} = {evaluate_exp(phrase)}\n")
+            rospy.loginfo(f"Formula: {phrase} = {evaluate_exp(phrase)}\n")
         except ValueError:
-            print(f"Formula: {phrase} -> incorrect, skipped")
+            rospy.loginfo(f"Formula: {phrase} -> incorrect, skipped")
         except Exception as e:
-            print(f"Formula: {phrase} -> {type(e)}: e")
+            rospy.logerr(f"Formula: {phrase} -> {type(e)}: e")
 
 
 def load_parameters() -> Dict[str, Any]:
@@ -143,7 +143,7 @@ def main():
 
     # STEP FOUR: start
     rospy.on_shutdown(cv.destroyAllWindows)
-    rospy.loginfo("Camera_display node running. Ctrl-c to quit")
+    rospy.loginfo("Node recognize_formula_from_camera is running. Ctrl-c to quit")
     rospy.spin()
 
 
