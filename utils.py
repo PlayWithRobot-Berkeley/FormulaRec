@@ -133,37 +133,20 @@ class Model:
         log.info('OpenVINO Runtime')
         log.info('\tbuild: {}'.format(get_version()))
         self.core = Core()
-        self.encoder = read_net(self.args.m_encoder, self.core, 'Formula Recognition Encoder')
-        self.decoder = read_net(self.args.m_decoder, self.core, 'Formula Recognition Decoder')
-        self.compiled_encoder = self.core.compile_model(self.encoder, device_name=self.args.device)
+        self.encoder = read_net(self.args['m_encoder'], self.core, 'Formula Recognition Encoder')
+        self.decoder = read_net(self.args['m_decoder'], self.core, 'Formula Recognition Decoder')
+        self.compiled_encoder = self.core.compile_model(self.encoder, device_name=self.args['device'])
         log.info('The Formula Recognition Encoder model {} is loaded to {}'.format(args.m_encoder, args.device))
-        self.compiled_decoder = self.core.compile_model(self.decoder, device_name=self.args.device)
+        self.compiled_decoder = self.core.compile_model(self.decoder, device_name=self.args['device'])
         log.info('The Formula Recognition Decoder model {} is loaded to {}'.format(args.m_decoder, args.device))
 
-        self.vocab = Vocab(self.args.vocab_path)
+        self.vocab = Vocab(self.args['vocab_path'])
         self.model_status = Model.Status.READY
         self.is_async = interactive_mode
         self.infer_request_encoder = self.compiled_encoder.create_infer_request()
         self.infer_request_decoder = self.compiled_decoder.create_infer_request()
         self.num_infers_decoder = 0
         self.check_model_dimensions()
-    #     if not interactive_mode:
-    #         self.preprocess_inputs()
-
-    # def preprocess_inputs(self):
-    #     _, _, height, width = self.encoder.input("imgs").shape
-    #     target_shape = (height, width)
-    #     if os.path.isdir(self.args.input):
-    #         inputs = sorted(os.path.join(self.args.input, inp)
-    #                         for inp in os.listdir(self.args.input))
-    #     else:
-    #         inputs = [self.args.input]
-    #     for filenm in tqdm(inputs):
-    #         image_raw = cv.imread(filenm)
-    #         assert image_raw is not None, "Error reading image {}".format(filenm)
-    #         image = preprocess_image(
-    #             PREPROCESSING[self.args.preprocessing_type], image_raw, target_shape)
-    #         record = namespace(img_name=filenm, img=image)
 
     def check_model_dimensions(self):
         batch_dim, channels, height, width = self.encoder.input("imgs").shape
@@ -171,15 +154,15 @@ class Model:
         assert channels in (1, 3), "Input image is not 1 or 3 channeled image."
 
     def _async_infer_encoder(self, image):
-        self.infer_request_encoder.start_async(inputs={self.args.imgs_layer: image})
+        self.infer_request_encoder.start_async(inputs={self.args['imgs_layer']: image})
 
     def _async_infer_decoder(self, row_enc_out, dec_st_c, dec_st_h, output, tgt):
         self.num_infers_decoder += 1
-        self.infer_request_decoder.start_async(inputs={self.args.row_enc_out_layer: row_enc_out,
-                                                       self.args.dec_st_c_layer: dec_st_c,
-                                                       self.args.dec_st_h_layer: dec_st_h,
-                                                       self.args.output_prev_layer: output,
-                                                       self.args.tgt_layer: tgt
+        self.infer_request_decoder.start_async(inputs={self.args['row_enc_out_layer']: row_enc_out,
+                                                       self.args['dec_st_c_layer']: dec_st_c,
+                                                       self.args['dec_st_h_layer']: dec_st_h,
+                                                       self.args['output_prev_layer']: output,
+                                                       self.args['tgt_layer']: tgt
                                                        }
                                                )
 
@@ -216,7 +199,7 @@ class Model:
             return None
         self._unpack_dec_results()
 
-        if self.tgt[0][0][0] == END_TOKEN or self.num_infers_decoder >= self.args.max_formula_len:
+        if self.tgt[0][0][0] == END_TOKEN or self.num_infers_decoder >= self.args['max_formula_len']:
             self.num_infers_decoder = 0
             self.logits = np.array(self.logits)
             logits = self.logits.squeeze(axis=1)
@@ -242,18 +225,18 @@ class Model:
         self.model_status = Model.Status.DECODER_INFER
 
     def _unpack_dec_results(self):
-        self.dec_states_h = self.infer_request_decoder.get_tensor(self.args.dec_st_h_t_layer).data[:]
-        self.dec_states_c = self.infer_request_decoder.get_tensor(self.args.dec_st_c_t_layer).data[:]
-        self.output = self.infer_request_decoder.get_tensor(self.args.output_layer).data[:]
-        logit = self.infer_request_decoder.get_tensor(self.args.logit_layer).data[:]
+        self.dec_states_h = self.infer_request_decoder.get_tensor(self.args['dec_st_h_t_layer']).data[:]
+        self.dec_states_c = self.infer_request_decoder.get_tensor(self.args['dec_st_c_t_layer']).data[:]
+        self.output = self.infer_request_decoder.get_tensor(self.args['output_layer']).data[:]
+        logit = self.infer_request_decoder.get_tensor(self.args['logit_layer']).data[:]
         self.logits.append(copy.deepcopy(logit))
         self.tgt = np.array([[np.argmax(logit, axis=1)]])
 
     def _unpack_enc_results(self):
-        self.row_enc_out = self.infer_request_encoder.get_tensor(self.args.row_enc_out_layer).data[:]
-        self.dec_states_h = self.infer_request_encoder.get_tensor(self.args.hidden_layer).data[:]
-        self.dec_states_c = self.infer_request_encoder.get_tensor(self.args.context_layer).data[:]
-        self.output = self.infer_request_encoder.get_tensor(self.args.init_0_layer).data[:]
+        self.row_enc_out = self.infer_request_encoder.get_tensor(self.args['row_enc_out_layer']).data[:]
+        self.dec_states_h = self.infer_request_encoder.get_tensor(self.args['hidden_layer']).data[:]
+        self.dec_states_c = self.infer_request_encoder.get_tensor(self.args['context_layer']).data[:]
+        self.output = self.infer_request_encoder.get_tensor(self.args['init_0_layer']).data[:]
         self.tgt = np.array([[START_TOKEN]])
         self.logits = []
 

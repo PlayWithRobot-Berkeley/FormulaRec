@@ -1,144 +1,150 @@
 #!/usr/bin/env python3
-"""
- Copyright (c) 2020 Intel Corporation
-
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
-
-      http://www.apache.org/licenses/LICENSE-2.0
-
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
-"""
-
-import logging as log
 import sys
-from argparse import SUPPRESS, ArgumentParser
+from typing import Callable, Tuple, Any, List, Dict
 
 import cv2 as cv
+from cv_bridge import CvBridge, CvBridgeError
+import intera_interface
 from utils import (PREPROCESSING, Model, calculate_probability, preprocess_image)
+import rospy
+
 from evaluate import evaluate_exp
 
-log.basicConfig(format='[ %(levelname)s ] %(message)s', level=log.WARN, stream=sys.stdout)
+def image_callback(img_data, handlers: List[Callable[[cv.Mat], None]]):
+    """The callback function to retrieve image by using CvBridge
 
-def create_capture(input_source, demo_resolution):
+    Params
+    ------
+    img_data: the image topic data
+    handlers: a list (or tuple) of Callable taking in the image from camera
+    """
+    bridge = CvBridge()
     try:
-        input_source = int(input_source)
-    except ValueError:
-        pass
-    capture = cv.VideoCapture(input_source)
-    capture.set(cv.CAP_PROP_BUFFERSIZE, 1)
-    capture.set(cv.CAP_PROP_FRAME_WIDTH, demo_resolution[0])
-    capture.set(cv.CAP_PROP_FRAME_HEIGHT, demo_resolution[1])
-    return capture
+        cv_image = bridge.imgmsg_to_cv2(img_data, "bgr8")
+    except CvBridgeError as err:
+        rospy.logerr(err)
+        return
+    if handlers: 
+        for handler in handlers:
+            handler(cv_image)
+    cv.waitKey(1)
 
 
-def non_interactive_demo(model, args):
-    _, _, height, width = model.encoder.input("imgs").shape
-    target_shape = (height, width)
-    vCap = create_capture(args.input, [width, height])
-    while True:
-        ret, frame = vCap.read()
-        if not ret:
-            break
+def formula_recognizer(model: Model, target_shape: Tuple[int, int], args: Dict[str, Any], frame: cv.Mat): 
+    """ Recognize image using the non-interactive mode of the model
 
-        blur = cv.GaussianBlur(
-            cv.cvtColor(frame, cv.COLOR_BGR2GRAY),
-            (5, 5), 0
-        )
-        th = cv.adaptiveThreshold(blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv.THRESH_BINARY, 15, 6)
-        th = cv.cvtColor(th, cv.COLOR_GRAY2BGR)
-        cv.imshow("Display", th)
-        # wait for 1ms or key press
-        k = cv.waitKey(1) #k is the key pressed
-        image = preprocess_image(PREPROCESSING[args.preprocessing_type],
-            th, target_shape)
+    Params
+    ------
+    model: the Model to be used
+    target_shape: a tuple of height, width required by the model as inputs
+    args: key-value arguments
+    frame: the image from camera
+    """
+    blur = cv.GaussianBlur(
+        cv.cvtColor(frame, cv.COLOR_BGR2GRAY),
+        (5, 5), 0
+    )
+    th = cv.adaptiveThreshold(blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv.THRESH_BINARY, 15, 6)
+    th = cv.cvtColor(th, cv.COLOR_GRAY2BGR)
+    cv.imshow("Display", th)
+    image = preprocess_image(PREPROCESSING[args['preprocessing_type']],
+        th, target_shape)
 
-        distribution, targets = model.infer_sync(image)
-        prob = calculate_probability(distribution)
-        log.info("Confidence score is {}".format(prob))
-        if prob >= args.conf_thresh ** len(distribution):
-            phrase = model.vocab.construct_phrase(targets)
-            try:
-                print(f"Formula: {phrase} = {evaluate_exp(phrase)}\n")
-            except ValueError:
-                print(f"Formula: {phrase} -> incorrect, skipped")
-            except Exception as e:
-                print(f"Formula: {phrase} -> {type(e)}: e")
-        if k == 27 or k == 113:  #27, 113 are ascii for escape and q respectively
-            break
-    vCap.release()
-    cv.destroyAllWindows()
+    distribution, targets = model.infer_sync(image)
+    prob = calculate_probability(distribution)
+    rospy.loginfo("Confidence score is {}".format(prob))
+    if prob >= args['conf_thresh'] ** len(distribution):
+        phrase = model.vocab.construct_phrase(targets)
+        try:
+            print(f"Formula: {phrase} = {evaluate_exp(phrase)}\n")
+        except ValueError:
+            print(f"Formula: {phrase} -> incorrect, skipped")
+        except Exception as e:
+            print(f"Formula: {phrase} -> {type(e)}: e")
 
 
-def build_argparser():
-    parser = ArgumentParser(add_help=False)
-    args = parser.add_argument_group('Options')
-    args.add_argument('-h', '--help', action='help',
-                      default=SUPPRESS, help='Show this help message and exit.')
-    args.add_argument("-m_encoder", help="Required. Path to an .xml file with a trained encoder part of the model",
-                      required=True, type=str)
-    args.add_argument("-m_decoder", help="Required. Path to an .xml file with a trained decoder part of the model",
-                      required=True, type=str)
-    args.add_argument("-i", "--input", help="Required. Integer identifier of the camera or path to the video",
-                      required=True, type=str)
-    args.add_argument("-v", "--vocab_path", help="Required. Path to vocab file to construct meaningful phrase",
-                      type=str, required=True)
-    args.add_argument("--max_formula_len",
-                      help="Optional. Defines maximum length of the formula (number of tokens to decode)",
-                      default="128", type=int)
-    args.add_argument("-t", "--conf_thresh",
-                      help="Optional. Probability threshold to treat model prediction as meaningful",
-                      default=0.95, type=float)
-    args.add_argument("-d", "--device",
-                      help="Optional. Specify the target device to infer on; CPU, GPU, HDDL or MYRIAD is "
-                           "acceptable. The demo will look for a suitable plugin for device specified. Default value "
-                           "is CPU",
-                      default="CPU", type=str)
-    args.add_argument("--resolution", default=(1280, 720), type=int, nargs=2,
-                      help='Optional. Resolution of the demo application window. Default: 1280 720')
-    args.add_argument('--preprocessing_type', choices=PREPROCESSING.keys(),
-                      help="Optional. Type of the preprocessing", default='crop')
-    args.add_argument('--imgs_layer', help='Optional. Encoder input name for images. See README for details.',
-                      default='imgs')
-    args.add_argument('--row_enc_out_layer',
-                      help='Optional. Encoder output key for row_enc_out. See README for details.',
-                      default='row_enc_out')
-    args.add_argument('--hidden_layer', help='Optional. Encoder output key for hidden. See README for details.',
-                      default='hidden')
-    args.add_argument('--context_layer', help='Optional. Encoder output key for context. See README for details.',
-                      default='context')
-    args.add_argument('--init_0_layer', help='Optional. Encoder output key for init_0. See README for details.',
-                      default='init_0')
-    args.add_argument('--dec_st_c_layer', help='Optional. Decoder input key for dec_st_c. See README for details.',
-                      default='dec_st_c')
-    args.add_argument('--dec_st_h_layer', help='Optional. Decoder input key for dec_st_h. See README for details.',
-                      default='dec_st_h')
-    args.add_argument('--dec_st_c_t_layer', help='Optional. Decoder output key for dec_st_c_t. See README for details.',
-                      default='dec_st_c_t')
-    args.add_argument('--dec_st_h_t_layer', help='Optional. Decoder output key for dec_st_h_t. See README for details.',
-                      default='dec_st_h_t')
-    args.add_argument('--output_layer', help='Optional. Decoder output key for output. See README for details.',
-                      default='output')
-    args.add_argument('--output_prev_layer',
-                      help='Optional. Decoder input key for output_prev. See README for details.',
-                      default='output_prev')
-    args.add_argument('--logit_layer', help='Optional. Decoder output key for logit. See README for details.',
-                      default='logit')
-    args.add_argument('--tgt_layer', help='Optional. Decoder input key for tgt. See README for details.',
-                      default='tgt')
-    return parser
+def load_parameters() -> Dict[str, Any]:
+    """ Read arguments from ROS parameter server
 
+    Returns
+    -------
+    A dictionary, whose keys are the parameter names, and the 
+    values are the arguments
+    """
+    args = {}
+    # REQUIRED param
+    if not rospy.has_param('~m_encoder'):
+        raise ValueError('m_encoder parameter must be specified')
+    args['m_encoder'] = rospy.get_param('~m_encoder')
+    if not rospy.has_param('~m_decoder'):
+        raise ValueError('m_decoder parameter must be specified')
+    args['m_encoder'] = rospy.get_param('~m_decoder')
+    if not rospy.has_param('~vocab_path'):
+        raise ValueError('vocab_path parameter must be specified')
+    args['vocab_path'] = rospy.get_param('~vocab_path')
+
+    # Optional param
+    def optional_param_getter(name: str, default_val): 
+        args[name] = default_val if not rospy.has_param(f'~{name}') \
+            else rospy.get_param(f'~{name}')
+    optional_param_getter('camera', 'head_camera')
+    optional_param_getter('conf_thresh', 0.95)
+    optional_param_getter('device', 'CPU')
+    optional_param_getter('max_formula_len', 128)
+    optional_param_getter('resolution', (1280, 720))
+    optional_param_getter('imgs_layer', 'imgs')
+    optional_param_getter('row_enc_out_layer', 'row_enc_out')
+    optional_param_getter('hidden_layer', 'hidden')
+    optional_param_getter('context_layer', 'context')
+    optional_param_getter('init_0_layer', 'init_0')
+    optional_param_getter('dec_st_c_layer', 'dec_st_c')
+    optional_param_getter('dec_st_h_layer', 'dec_st_h')
+    optional_param_getter('dec_st_c_t_layer', 'dec_st_c_t')
+    optional_param_getter('dec_st_h_t_layer', 'dec_st_h_t')
+    optional_param_getter('output_layer', 'output')
+    optional_param_getter('output_prev_layer', 'output_prev')
+    optional_param_getter('logit_layer', 'logit')
+    optional_param_getter('tgt_layer', 'tgt')
+    optional_param_getter('preprocessing', 'crop')
+
+    if args['preprocessing'] not in PREPROCESSING: 
+        raise ValueError(f'unrecognized preprocessing argument: {args["preprocessing"]}')
+    
+    return args
+    
+        
 
 def main():
-    args = build_argparser().parse_args()
+    # STEP ONE: init
+    rp = intera_interface.RobotParams()
+    valid_cameras = rp.get_camera_names()
+    if not valid_cameras:
+        rp.log_message(("Cannot detect any camera_config"
+            " parameters on this robot. Exiting."), "ERROR")
+        return 1
+    
+    rospy.init_node('recognize_formula_from_camera', anonymous=True)
+    args = load_parameters()
+
+    # STEP TWO: establish the model
     model = Model(args, False)
-    non_interactive_demo(model, args)
+    _, _, height, width = model.encoder.input("imgs").shape
+    input_shape = (height, width)
+
+    # STEP THREE: set up the camera
+    camera = intera_interface.Cameras()
+    if not camera.verify_camera_exists(args['camera']):
+        rospy.logerr("Invalid camera name. Exiting")
+        return 2
+    recognizer_closure = lambda frame: formula_recognizer(model, input_shape, args, frame)
+    camera.set_callback(args['camera'], image_callback, 
+        rectify_image = True, callback_args=(recognizer_closure))
+
+    # STEP FOUR: start
+    rospy.on_shutdown(cv.destroyAllWindows)
+    rospy.loginfo("Camera_display node running. Ctrl-c to quit")
+    rospy.spin()
 
 
 if __name__ == '__main__':
