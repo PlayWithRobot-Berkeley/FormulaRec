@@ -1,1 +1,0 @@
-samples/calib_image_0.png	3 t q ^ { 7 }
