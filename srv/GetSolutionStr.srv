@@ -1,0 +1,4 @@
+int number_of_tries
+string camera_name
+---
+string results
