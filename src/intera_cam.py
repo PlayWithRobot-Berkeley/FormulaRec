@@ -26,13 +26,27 @@ def image_callback(img_data, handlers: List[Callable[[cv.Mat], None]]):
     bridge = CvBridge()
     try:
         cv_image = bridge.imgmsg_to_cv2(img_data, "bgr8")
+        blur = cv.GaussianBlur(
+            cv.cvtColor(cv_image, cv.COLOR_BGR2GRAY),
+            (5, 5), 0
+        )
+        th = cv.adaptiveThreshold(blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv.THRESH_BINARY, 15, 6)
+        th = cv.cvtColor(th, cv.COLOR_GRAY2BGR)
     except CvBridgeError as err:
         rospy.logerr(err)
         return
     if handlers: 
         for handler in handlers:
-            handler(cv_image)
+            handler(th)
     cv.waitKey(1)
+
+
+def show_image(target_shape: Tuple[int, int], args: Dict[str, Any], frame: cv.Mat):
+    image = preprocess_image(PREPROCESSING[args['preprocessing']],
+        frame, target_shape)
+    cv.imshow("Display", image)
+    
 
 
 def formula_recognizer(model: Model, target_shape: Tuple[int, int], args: Dict[str, Any], frame: cv.Mat): 
@@ -45,16 +59,8 @@ def formula_recognizer(model: Model, target_shape: Tuple[int, int], args: Dict[s
     args: key-value arguments
     frame: the image from camera
     """
-    blur = cv.GaussianBlur(
-        cv.cvtColor(frame, cv.COLOR_BGR2GRAY),
-        (5, 5), 0
-    )
-    th = cv.adaptiveThreshold(blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv.THRESH_BINARY, 15, 6)
-    th = cv.cvtColor(th, cv.COLOR_GRAY2BGR)
-    cv.imshow("Display", th)
     image = preprocess_image(PREPROCESSING[args['preprocessing']],
-        th, target_shape)
+        frame, target_shape)
 
     distribution, targets = model.infer_sync(image)
     prob = calculate_probability(distribution)
@@ -62,11 +68,15 @@ def formula_recognizer(model: Model, target_shape: Tuple[int, int], args: Dict[s
     if prob >= args['conf_thresh'] ** len(distribution):
         phrase = model.vocab.construct_phrase(targets)
         try:
-            rospy.loginfo(f"Formula: {phrase} = {evaluate_exp(phrase)}\n")
+            result = evaluate_exp(phrase)
+            rospy.loginfo(f"Formula: {phrase} = {result}\n")
+            return result
         except ValueError:
             rospy.loginfo(f"Formula: {phrase} -> incorrect, skipped")
+            return None
         except Exception as e:
             rospy.logerr(f"Formula: {phrase} -> {type(e)}: e")
+            return None
 
 
 def load_parameters() -> Dict[str, Any]:
@@ -144,7 +154,7 @@ def main():
         return 2
     recognizer_closure = lambda frame: formula_recognizer(model, input_shape, args, frame)
     camera.set_callback(args['camera'], image_callback, 
-        rectify_image = True, callback_args=(recognizer_closure, ))
+        rectify_image = True, callback_args=(show_image, recognizer_closure))
 
     # STEP FOUR: start
     rospy.on_shutdown(cv.destroyAllWindows)
