@@ -1,10 +1,10 @@
 from typing import Callable, Union, Any, Dict
 from threading import Lock
 
-from intera_interface import Cameras, RobotParams
+import intera_interface
 import rospy
 
-from formula_rec.srv import GetSolutionInt, GetSolutionStr
+from formula_rec.srv import GetSolutionInt, GetSolutionIntRequest, GetSolutionStr, GetSolutionStrRequest
 from intera_cam import image_callback, formula_recognizer, show_image, load_parameters
 from utils import Model
 
@@ -20,7 +20,7 @@ class Serverlet:
     model: the CV model
     cameras: the intera_interface.Cameras
     """
-    def __init__(self, args: Dict[str, Any], model: Model, cameras: Cameras):
+    def __init__(self, args: Dict[str, Any], model: Model, cameras: intera_interface.Cameras):
         self._model = model
         self._args = args
         self._cameras = cameras
@@ -111,7 +111,7 @@ class Serverlet:
                 self._answer_lock.release()
 
 
-    def _inner_callback(self, request) -> Union[float, int]: 
+    def _inner_callback(self, request: Union[GetSolutionIntRequest, GetSolutionStrRequest]) -> Union[float, int]: 
         """ Handling a request. 
 
         This is a general inner method, regardless what respond
@@ -136,14 +136,14 @@ class Serverlet:
         return self._wait_until_answer_queue_is_full(num_of_tries)
 
 
-    def get_solution_int_callback(self, request) -> int: 
+    def get_solution_int_callback(self, request: GetSolutionIntRequest) -> int: 
         """Service callback for `/formula_rec/get_solution_int` whose client
         expects an integral respond.
         """
         rospy.wait_for_service(f'/formula_rec/get_solution_int')
         return int(self._inner_callback(request))
     
-    def get_solution_str_callback(self, request) -> str:
+    def get_solution_str_callback(self, request: GetSolutionStrRequest) -> str:
         """Service callback for `/formula_rec/get_solution_str` whose client
         expects a string as the respond.
         """
@@ -166,7 +166,7 @@ class Serverlet:
         rospy.loginfo('Services registered. The server is running...')
         
 if __name__ == '__main__':
-    rp = RobotParams()
+    rp = intera_interface.RobotParams()
     valid_cameras = rp.get_camera_names()
     if not valid_cameras:
         rp.log_message(("Cannot detect any camera_config"
@@ -176,7 +176,7 @@ if __name__ == '__main__':
     rospy.init_node('recognize_formula_per_request', anonymous=True)
     args = load_parameters()
     model = Model(args, False)
-    cameras = Cameras()
+    cameras = intera_interface.Cameras()
 
     serverlet = Serverlet(args, model, cameras)
     serverlet.register()

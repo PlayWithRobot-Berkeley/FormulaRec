@@ -74,7 +74,7 @@ add_service_files(
 generate_messages(
   DEPENDENCIES
   geometry_msgs
-  td_msgs
+  std_msgs
 )
 
 ################################################
