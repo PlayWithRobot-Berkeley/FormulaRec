@@ -26,26 +26,17 @@ def image_callback(img_data, handlers: List[Callable[[cv.Mat], None]]):
     bridge = CvBridge()
     try:
         cv_image = bridge.imgmsg_to_cv2(img_data, "bgr8")
-        blur = cv.GaussianBlur(
-            cv.cvtColor(cv_image, cv.COLOR_BGR2GRAY),
-            (5, 5), 0
-        )
-        th = cv.adaptiveThreshold(blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv.THRESH_BINARY, 15, 6)
-        th = cv.cvtColor(th, cv.COLOR_GRAY2BGR)
     except CvBridgeError as err:
         rospy.logerr(err)
         return
     if handlers: 
         for handler in handlers:
-            handler(th)
+            handler(cv_image)
     cv.waitKey(1)
 
 
-def show_image(target_shape: Tuple[int, int], args: Dict[str, Any], frame: cv.Mat):
-    image = preprocess_image(PREPROCESSING[args['preprocessing']],
-        frame, target_shape)
-    cv.imshow("Display", image)
+def show_image(frame: cv.Mat):
+    cv.imshow("Raw Image", frame)
     
 
 
@@ -59,8 +50,18 @@ def formula_recognizer(model: Model, target_shape: Tuple[int, int], args: Dict[s
     args: key-value arguments
     frame: the image from camera
     """
+    blur = cv.GaussianBlur(
+        cv.cvtColor(frame, cv.COLOR_BGR2GRAY),
+        (5, 5), 0
+    )
+    th = cv.adaptiveThreshold(blur, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv.THRESH_BINARY, 15, 6)
+    th = cv.cvtColor(th, cv.COLOR_GRAY2BGR)
     image = preprocess_image(PREPROCESSING[args['preprocessing']],
-        frame, target_shape)
+        th, target_shape)
+
+
+    cv.imshow("Normalized image", image)
 
     distribution, targets = model.infer_sync(image)
     prob = calculate_probability(distribution)

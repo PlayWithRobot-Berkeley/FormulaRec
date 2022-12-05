@@ -1,15 +1,15 @@
 <launch>
-  <arg name="encoder" default="intel/formula-recognition-polynomials-handwritten-0001/formula-recognition-polynomials-handwritten-0001-encoder/FP16/formula-recognition-polynomials-handwritten-0001-encoder.xml" />
-  <arg name="decoder" default="intel/formula-recognition-polynomials-handwritten-0001/formula-recognition-polynomials-handwritten-0001-decoder/FP16/formula-recognition-polynomials-handwritten-0001-decoder.xml" />
+  <arg name="encoder" default="intel/formula-recognition-polynomials-handwritten-0001/formula-recognition-polynomials-handwritten-0001-encoder/FP32/formula-recognition-polynomials-handwritten-0001-encoder.xml" />
+  <arg name="decoder" default="intel/formula-recognition-polynomials-handwritten-0001/formula-recognition-polynomials-handwritten-0001-decoder/FP32/formula-recognition-polynomials-handwritten-0001-decoder.xml" />
   <arg name="vocab" default="intel/formula-recognition-polynomials-handwritten-0001/formula-recognition-polynomials-handwritten-0001-decoder/vocab.json" />
-  <arg name="camera" default="head_camera" />
-  <arg name="confidence" default="0.95" />
+  <arg name="camera" default="right_hand_camera" />
+  <arg name="confidence" default="0.90" />
   <arg name="preprocessing" default="crop" />
 
   <!-- Mapper node. -->
   <node name="recognize_formula_from_camera"
         pkg="formula_rec"
-        type="intera_cam.py"
+        type="server.py"
         output="screen">
 
     <param name="cv/m_encoder"     value="$(arg encoder)" />

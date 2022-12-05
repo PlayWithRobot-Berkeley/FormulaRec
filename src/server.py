@@ -1,4 +1,5 @@
-from typing import Callable, Union, Any, Dict
+#!/usr/bin/env python3
+from typing import List, Union, Any, Dict
 from threading import Lock
 
 import intera_interface
@@ -32,6 +33,7 @@ class Serverlet:
         self._answer_lock = Lock()
         """A lock to protect the answer counter and the dictionary bookkeeping"""
         self._camera_name = args["camera"]
+        self._skip_rec = True
 
         _, _, height, width = model.encoder.input("imgs").shape
         self._input_shape = (height, width)
@@ -40,6 +42,10 @@ class Serverlet:
         if not self._cameras.verify_camera_exists(self._camera_name):
             rospy.logerr(f"Invalid camera name: {self._camera_name}. Exiting")
             rospy.signal_shutdown()
+        self._cameras.set_callback(self._camera_name, image_callback, 
+            rectify_image = True, callback_args=(show_image, self._recognizer_closure))
+        self._skip_rec = True
+        """Skip the current frame, i.e., no recognition"""
         self.reset()
 
     def reset(self):
@@ -48,17 +54,12 @@ class Serverlet:
         After it is reset and before it starts to handling a request, the server
         only display the images.
         """
-        self._cameras.set_callback(self._camera_name, image_callback, 
-            rectify_image = True, callback_args=(show_image, ))
         # only one handler is provided as the image_callback's args
         # => The image will be displayed, but the model will not be 
         # called until a new request comes 
-        try: 
-            self._answer_lock.acquire()
-            self._answer_2_cnt.clear()
-            self._answer_cnt = 0
-        finally:
-            self._answer_lock.release()
+        self._answer_2_cnt.clear()
+        self._answer_cnt = 0
+        self._skip_rec = True
     
     def _recognizer_closure(self, frame):
         """ Contradictory to the init state after the reseting, when a request
@@ -69,6 +70,8 @@ class Serverlet:
         ------
         frame: the frame to be recognized
         """
+        if self._skip_rec: 
+            return
         result = formula_recognizer(self._model, self._input_shape, self._args, frame)
         if result is None:
             return
@@ -105,10 +108,9 @@ class Serverlet:
                         if cnt > max_cnt: max_cnt, max_cnt_val = cnt, val
                     self.reset()
                     return max_cnt_val
-                else:
-                    rate.sleep()
             finally:
                 self._answer_lock.release()
+            rate.sleep()
 
 
     def _inner_callback(self, request: Union[GetSolutionIntRequest, GetSolutionStrRequest]) -> Union[float, int]: 
@@ -131,12 +133,11 @@ class Serverlet:
         the numerical result
         """
         num_of_tries = request.number_of_tries
-        self._cameras.set_callback(self._camera_name, image_callback, 
-            rectify_image = True, callback_args=(show_image, self._recognizer_closure))
-        return self._wait_until_answer_queue_is_full(num_of_tries)
+        self._skip_rec = False
+        return self._wait_until_answer_queue_is_full(num_of_tries) # this will, once finished, turn _skip_rec back to True
 
 
-    def get_solution_int_callback(self, request: GetSolutionIntRequest) -> int: 
+    def get_solution_int_callback(self, request: GetSolutionIntRequest) -> List[int]: 
         """Service callback for `/formula_rec/get_solution_int` whose client
         expects an integral respond.
         """
@@ -148,7 +149,7 @@ class Serverlet:
         expects a string as the respond.
         """
         rospy.wait_for_service(f'/formula_rec/get_solution_str')
-        return f"{self._inner_callback(request)}:.2f"
+        return f"{self._inner_callback(request):.2f}"
 
 
     def register(self):
