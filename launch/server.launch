@@ -1,0 +1,23 @@
+<launch>
+  <arg name="encoder" default="intel/formula-recognition-polynomials-handwritten-0001/formula-recognition-polynomials-handwritten-0001-encoder/FP32/formula-recognition-polynomials-handwritten-0001-encoder.xml" />
+  <arg name="decoder" default="intel/formula-recognition-polynomials-handwritten-0001/formula-recognition-polynomials-handwritten-0001-decoder/FP32/formula-recognition-polynomials-handwritten-0001-decoder.xml" />
+  <arg name="vocab" default="intel/formula-recognition-polynomials-handwritten-0001/formula-recognition-polynomials-handwritten-0001-decoder/vocab.json" />
+  <arg name="camera" default="right_hand_camera" />
+  <arg name="confidence" default="0.90" />
+  <arg name="preprocessing" default="crop" />
+
+  <!-- Mapper node. -->
+  <node name="recognize_formula_from_camera"
+        pkg="formula_rec"
+        type="server.py"
+        output="screen">
+
+    <param name="cv/m_encoder"     value="$(arg encoder)" />
+    <param name="cv/m_decoder"     value="$(arg decoder)" />
+    <param name="cv/vocab_path"    value="$(arg vocab)" />
+    <param name="cv/camera"        value="$(arg camera)" />
+    <param name="cv/conf_thresh"   value="$(arg confidence)" />
+    <param name="cv/preprocessing" value="$(arg preprocessing)" />
+
+  </node>
+</launch>
