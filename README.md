@@ -9,12 +9,27 @@ The repository contains a ROS package, relying on
 `intera_interface`, 
 `rospy` and
 `std_msgs`. 
-The node to be used is the `src/intera_cam.py`. It
+
+There are two nodes here: 
+
+### `src/intera_cam.py`
+
+This node serve as an test node, with no topic or service interaction with the controller or
+path planning part. It: 
 * retrieves images from one of the Sawyer's cameras (by default `head_camera`, but testing shows the `right_hand_camera` on the wrist is better),
 * feeds them into a pretrained model (defined in `src/model.py` whose trained parameters are indexed by the `model.lst`) to interpret the Latex expression,
 * parse the expressions,
 * evaluate results of the parsed expression, and
 * respond to a client's query with the results.
+
+
+### `src/server.py`
+
+This node relies on `src/intera_cam.py`, shouldering almost the same functionalities but: 
+* will not start CV recognition until a service request from `/formula/get_solution_int` or `/formula/get_solution_str`
+* will run the recognition model continuously after a request is received until a specified number of answers is generated
+* will return the service client with the **most frequent** answer among all the answers as many as the specified number
+* will turns itself off to the silent mode and waiting for a new request again
 
 ## ROS Node details
 
@@ -25,7 +40,7 @@ After cloning the repository, the first thing is download the pretrained models.
 After the downloaded is installed, you may run 
 
 ```sh
-omz_downloader model.lst
+omz_downloader --list model.lst
 ```
 
 which will download all the necessary models under the package's root directory. Four models will be downloaded: 
@@ -40,25 +55,43 @@ first SSH into the Sawyer and re-enable the robot, and then **exit the SSH sessi
 
 ### B. Launch file and parameters
 
-The launch file locates in `launch/start.launch`, with the following customizable parameters: 
+#### `launch/start.launch`
+
+This starts the `intera_cam.py` node, with the following customizable parameters: 
 * **`encoder`**: path to the encoder model's XML file.
 * **`decoder`**: path to the decoder model's XML file.
 * **`vocab`**: path the decoder model's `vocab.json`.
 * **`camera`**: specify which camera to use, either `head_camera` (default) or `right_hand_camera` (recommended).
 * **`confidence`**: confidence level, below which the parsed expression will be discarded.
-* **`preprocessing`**: the image preprocessing method, either `crop` or `resize`.
+* **`preprocessing`**: the image preprocessing method, either `crop` or `resize` (default).
+
+#### `launch/serve.launch`
+
+This starts the `server.py`
+
+* **`encoder`**: path to the encoder model's XML file.
+* **`decoder`**: path to the decoder model's XML file.
+* **`vocab`**: path the decoder model's `vocab.json`.
+* **`camera`**: specify which camera to use, either `head_camera` or `right_hand_camera` (default and recommended).
+* **`confidence`**: confidence level, below which the parsed expression will be discarded.
+* **`preprocessing`**: the image preprocessing method, either `crop` (default) or `resize`.
+
 
 
 ### C. ROS Service
 
-__*TODO*__
+The ROS service requires a number as the request, which specifies how many confident answers the CV model should
+produced until it returns a result. The result will be the most frequent one among the answers. There are two
+service channels, differing only by the returned types: 
 
-The node will not start recognition immediately it is started. It will be silent until a request is sent
-from the client. It will regard the request as a signal indicating "the question board is set up already". 
-Thus, it is desirable that the client will not sent the request until it is ready. 
+#### `/formula_rec/get_solution_int`
 
-The node will then capture 100 frames from the camera, parsing each and finding the result appears the most
-among the 100 frames. A responds carrying the result will thereafter be dispatched. 
+This returns an integral result. Should the answer is a floating point number, it will round the number
+to the nearest integer. 
+
+#### `/formula_rec/get_solution_str`
+
+This returns a floating point number as a string. Two digits after decimal point will be preserved. 
 
 ## Logistics
 
