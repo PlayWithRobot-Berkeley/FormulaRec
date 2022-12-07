@@ -235,9 +235,9 @@ class OperatorNode(ExpTreeNode):
         if isinstance(val, int) or val == int(val): return int(val)
         return val
 
-    def __gt__(self, obj: "OperatorNode"):
+    def __ge__(self, obj: "OperatorNode"):
         assert isinstance(obj, OperatorNode)
-        return self.PreDefinedOperations.op_func_priority(self._inner_opt) > \
+        return self.PreDefinedOperations.op_func_priority(self._inner_opt) >= \
                 self.PreDefinedOperations.op_func_priority(obj._inner_opt)
         
     
@@ -284,7 +284,7 @@ class OperatorNode(ExpTreeNode):
                     stack.append(node)
                     node.children.append(hold_operand)
                 else:
-                    while stack[-1] > node: 
+                    while stack and stack[-1] >= node: 
                         prev_node = stack.pop()
                         prev_node.children.append(hold_operand)
                         hold_operand = prev_node
